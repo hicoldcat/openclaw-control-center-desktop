@@ -7,7 +7,8 @@
   "scripts": {
     "sync:upstream": "node scripts/sync-upstream.cjs",
     "start": "electron .",
-    "dist": "electron-builder --publish never"
+    "dist": "electron-builder --publish never",
+    "dist:win": "electron-builder --win nsis --publish never"
   },
   "build": {
     "appId": "com.hicoldcat.openclaw.controlcenter.desktop",
@@ -27,6 +28,20 @@
       "icon": "assets/windows/icon.ico",
       "target": [
         "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "assets/windows/icon.ico",
+      "uninstallerIcon": "assets/windows/icon.ico",
+      "installerHeaderIcon": "assets/windows/icon.ico",
+      "createDesktopShortcut": "always",
+      "runAfterFinish": true,
+      "installerLanguages": [
+        "zh_CN"
       ]
     }
   },

@@ -2,6 +2,8 @@
 
 基于 [OpenClaw Control Center](https://github.com/TianyiDataScience/openclaw-control-center) 项目包装的桌面客户端。
 
+<img src="screenshot/ScreenShot_2026-03-14_224334_600.png" alt="OpenClaw Control Center Desktop" width="1200" />
+
 ## 说明
 
 本桌面端基于[OpenClaw Control Center](https://github.com/TianyiDataScience/openclaw-control-center) 项目能力进行封装，为小白用户提供一个开箱即用的桌面端入口，可以给 OpenClaw 提供一个本地控制中心，便捷的查看养虾数据和进度。
