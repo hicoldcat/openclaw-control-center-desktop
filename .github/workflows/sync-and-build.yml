@@ -150,7 +150,11 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: desktop-build-${{ matrix.platform }}-${{ needs.prepare.outputs.release_tag }}
-          path: dist/**
+          path: |
+            dist/*.exe
+            dist/*.blockmap
+            dist/*.yml
+            dist/*.yaml
 
   publish-release:
     needs: [prepare, build]
@@ -172,4 +176,7 @@ jobs:
           name: ${{ needs.prepare.outputs.release_name }}
           draft: false
           files: |
-            release-assets/**
+            release-assets/*.exe
+            release-assets/*.blockmap
+            release-assets/*.yml
+            release-assets/*.yaml
