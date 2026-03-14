@@ -90,7 +90,6 @@ npm start
 
 - 每 30 分钟触发一次
 - 支持在 Actions 页面手动触发（`Run workflow`）
-- 每次推送到 `master/main` 会触发一次轻量健康检查（不打包）
 - 自动同步 `upstream/` 子模块到上游最新 `main`，并在有变更时自动提交子模块指针
 - 当满足打包条件时执行：
   - 上游 `npm ci` + `npm run build`
