@@ -72,10 +72,26 @@ jobs:
         run: |
           timestamp="$(date -u +'%Y%m%d-%H%M%S')"
           display_time="$(date -u +'%Y-%m-%d %H:%M UTC')"
-          version="$(node -p "require('./package.json').version")"
+          upstream_version="$(node -p "require('./upstream/package.json').version")"
+          desktop_version="${upstream_version}-desktop.${timestamp}"
           short_sha="$(git rev-parse --short HEAD)"
-          tag="desktop-${timestamp}-${short_sha}"
-          name="OpenClaw Desktop v${version} (${display_time})"
+          tag="desktop-v${upstream_version}-${timestamp}-${short_sha}"
+          name="OpenClaw Desktop v${desktop_version}"
+
+          previous_tag="$(git tag --list 'desktop-*' --sort=-creatordate | head -n 1)"
+          if [[ -n "${previous_tag}" ]]; then
+            commit_scope="${previous_tag}..HEAD"
+            commit_scope_title="Commits since ${previous_tag}"
+          else
+            commit_scope="HEAD"
+            commit_scope_title="Recent commits"
+          fi
+
+          commit_list="$(git log --no-merges --pretty='- `%h` %s' -n 40 ${commit_scope})"
+          if [[ -z "${commit_list}" ]]; then
+            commit_list="- No code commits in this release window."
+          fi
+
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
           echo "name=${name}" >> "$GITHUB_OUTPUT"
           echo "commit_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
@@ -83,10 +99,14 @@ jobs:
             echo "body<<EOF"
             echo "## OpenClaw Desktop"
             echo ""
-            echo "- Version: \`${version}\`"
+            echo "- Desktop Version: \`${desktop_version}\`"
+            echo "- Upstream Version: \`${upstream_version}\`"
             echo "- Build Time (UTC): ${display_time}"
             echo "- Commit: \`${short_sha}\`"
             echo "- Channel: Stable"
+            echo ""
+            echo "### ${commit_scope_title}"
+            printf '%s\n' "${commit_list}"
             echo ""
             echo "### Download"
             echo "- Windows installer is attached in **Assets** below."
@@ -114,7 +134,7 @@ jobs:
           name: ${{ needs.prepare.outputs.release_name }}
           body: ${{ needs.prepare.outputs.release_body }}
           draft: true
-          generate_release_notes: true
+          generate_release_notes: false
 
   build:
     needs: [prepare, create-release]
