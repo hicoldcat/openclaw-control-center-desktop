@@ -76,7 +76,7 @@ jobs:
           desktop_version="${upstream_version}-desktop.${timestamp}"
           short_sha="$(git rev-parse --short HEAD)"
           tag="desktop-v${upstream_version}-${timestamp}-${short_sha}"
-          name="OpenClaw Desktop v${desktop_version}"
+          name="v${upstream_version}-${short_sha}"
 
           previous_tag="$(git tag --list 'desktop-*' --sort=-creatordate | head -n 1)"
           if [[ -n "${previous_tag}" ]]; then
