@@ -145,6 +145,8 @@ jobs:
       - name: Package desktop app
         shell: bash
         run: npm run dist
+        env:
+          ELECTRON_BUILDER_BINARIES_MIRROR: https://github.com/electron-userland/electron-builder-binaries/releases/download/
 
       - name: Upload platform artifacts
         uses: actions/upload-artifact@v4
