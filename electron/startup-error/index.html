@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Desktop startup failed</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main class="dialog">
+      <section class="hero">
+        <div class="badge">Startup Error</div>
+        <h1 id="headline">OpenClaw Gateway not reachable</h1>
+        <p class="sub">The desktop app cannot connect to the local gateway service.</p>
+      </section>
+
+      <section class="panel">
+        <p class="label">Error details</p>
+        <pre id="reason"></pre>
+      </section>
+
+      <section class="panel">
+        <p class="label">Quick fix</p>
+        <p id="target"></p>
+      </section>
+
+      <section class="actions">
+        <button id="start" class="primary" type="button">Start OpenClaw</button>
+        <button id="retry" type="button">Retry</button>
+        <button id="help" type="button">View Help</button>
+        <button id="exit" class="danger" type="button">Exit</button>
+      </section>
+
+      <section class="status" id="status" aria-live="polite">
+        <span class="spinner" id="spinner" aria-hidden="true"></span>
+        <span id="status-text">Ready</span>
+      </section>
+    </main>
+
+    <script src="./renderer.js"></script>
+  </body>
+</html>

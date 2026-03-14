@@ -3,11 +3,14 @@ const path = require('node:path');
 const net = require('node:net');
 const http = require('node:http');
 const { spawn, spawnSync } = require('node:child_process');
-const { app, BrowserWindow, dialog, ipcMain } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron');
 
 const DEFAULT_UI_PORT = 4310;
 const DEFAULT_GATEWAY_HOST = process.env.OPENCLAW_GATEWAY_HOST || '127.0.0.1';
 const DEFAULT_GATEWAY_PORT = Number(process.env.OPENCLAW_GATEWAY_PORT || 18789);
+const GATEWAY_HELP_URL =
+  process.env.OPENCLAW_GATEWAY_HELP_URL || 'https://docs.openclaw.ai/';
+const APP_ROOT = path.resolve(__dirname, '..');
 const ICONS_DIR = path.resolve(__dirname, '..', 'assets');
 
 const BOOTSTRAP_CACHE_DIR = path.resolve(__dirname, '..', '.cache');
@@ -88,6 +91,71 @@ function readBootstrapState() {
 function writeBootstrapState(state) {
   fs.mkdirSync(BOOTSTRAP_CACHE_DIR, { recursive: true });
   fs.writeFileSync(BOOTSTRAP_STATE_FILE, JSON.stringify(state, null, 2));
+}
+
+function getBundledUpstreamDir() {
+  return path.join(APP_ROOT, 'upstream');
+}
+
+function getRuntimeUpstreamDir() {
+  return path.join(app.getPath('userData'), 'upstream-runtime');
+}
+
+function getUpstreamRuntimeStatePath() {
+  return path.join(BOOTSTRAP_CACHE_DIR, 'upstream-runtime-state.json');
+}
+
+function readJsonFile(filePath) {
+  try {
+    if (!pathExists(filePath)) {
+      return null;
+    }
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function writeJsonFile(filePath, value) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, JSON.stringify(value, null, 2));
+}
+
+function getBundledUpstreamSignature() {
+  const bundledDir = getBundledUpstreamDir();
+  const packageJsonPath = path.join(bundledDir, 'package.json');
+  const packageJsonStat = safeStat(packageJsonPath);
+  return {
+    appVersion: app.getVersion(),
+    packageJsonMtimeMs: packageJsonStat?.mtimeMs || 0,
+    packageJsonSize: packageJsonStat?.size || 0
+  };
+}
+
+function syncBundledUpstreamToRuntime() {
+  const bundledDir = getBundledUpstreamDir();
+  const runtimeDir = getRuntimeUpstreamDir();
+  const runtimeStatePath = getUpstreamRuntimeStatePath();
+
+  const currentSignature = getBundledUpstreamSignature();
+  const previousState = readJsonFile(runtimeStatePath);
+  const signatureChanged =
+    !previousState ||
+    previousState.appVersion !== currentSignature.appVersion ||
+    previousState.packageJsonMtimeMs !== currentSignature.packageJsonMtimeMs ||
+    previousState.packageJsonSize !== currentSignature.packageJsonSize;
+
+  if (!pathExists(runtimeDir) || signatureChanged) {
+    fs.rmSync(runtimeDir, { recursive: true, force: true });
+    fs.mkdirSync(runtimeDir, { recursive: true });
+    fs.cpSync(bundledDir, runtimeDir, { recursive: true });
+    writeJsonFile(runtimeStatePath, {
+      ...currentSignature,
+      updatedAt: new Date().toISOString()
+    });
+  }
+
+  return runtimeDir;
 }
 
 function readNumberFromFile(filePath) {
@@ -178,12 +246,17 @@ function buildUpstreamFingerprints(upstreamDir) {
   const tsConfigPath = path.join(upstreamDir, 'tsconfig.json');
   const srcDir = path.join(upstreamDir, 'src');
   const distDir = path.join(upstreamDir, 'dist');
+  const tsxBinPath =
+    process.platform === 'win32'
+      ? path.join(upstreamDir, 'node_modules', '.bin', 'tsx.cmd')
+      : path.join(upstreamDir, 'node_modules', '.bin', 'tsx');
 
   const packageJsonStat = safeStat(packageJsonPath);
   const packageLockStat = safeStat(packageLockPath);
   const tsConfigStat = safeStat(tsConfigPath);
   const srcLatest = latestMtimeMs(srcDir);
   const hasNodeModules = pathExists(path.join(upstreamDir, 'node_modules'));
+  const hasTsxBinary = pathExists(tsxBinPath);
   const hasDist = pathExists(distDir);
   const upstreamHead = readUpstreamHead(upstreamDir);
 
@@ -204,6 +277,7 @@ function buildUpstreamFingerprints(upstreamDir) {
 
   return {
     hasNodeModules,
+    hasTsxBinary,
     hasDist,
     upstreamHead,
     installFingerprint,
@@ -217,6 +291,7 @@ function getNpmCommand() {
 
 function runCommand(args, options = {}) {
   return new Promise((resolve, reject) => {
+    let stderrTail = '';
     const child = spawn(getNpmCommand(), args, {
       cwd: options.cwd,
       env: { ...process.env, ...NPM_EXEC_ENV, ...(options.env || {}) },
@@ -229,7 +304,14 @@ function runCommand(args, options = {}) {
     }
 
     if (child.stderr) {
-      child.stderr.on('data', (chunk) => process.stderr.write(chunk));
+      child.stderr.on('data', (chunk) => {
+        const text = chunk.toString();
+        process.stderr.write(text);
+        stderrTail = `${stderrTail}${text}`;
+        if (stderrTail.length > 4000) {
+          stderrTail = stderrTail.slice(-4000);
+        }
+      });
     }
 
     child.on('error', reject);
@@ -238,7 +320,14 @@ function runCommand(args, options = {}) {
         resolve();
         return;
       }
-      reject(new Error(`Command npm ${args.join(' ')} failed with code ${code}`));
+      const details = stderrTail.trim();
+      reject(
+        new Error(
+          details
+            ? `Command npm ${args.join(' ')} failed with code ${code}\n${details}`
+            : `Command npm ${args.join(' ')} failed with code ${code}`
+        )
+      );
     });
   });
 }
@@ -257,6 +346,167 @@ function checkPortOpen(host, port, timeoutMs = 1200) {
     socket.once('error', () => done(false));
     socket.connect(port, host);
   });
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getStartupErrorMessage(error) {
+  if (error instanceof Error && typeof error.message === 'string' && error.message.trim()) {
+    return error.message.trim();
+  }
+  if (typeof error === 'string' && error.trim()) {
+    return error.trim();
+  }
+  return 'Unknown startup error.';
+}
+
+function launchOpenClawGatewayHelper() {
+  try {
+    if (process.platform === 'win32') {
+      spawn('cmd', ['/k', 'openclaw gateway start || openclaw gateway'], {
+        stdio: 'ignore',
+        detached: true,
+        windowsHide: false
+      }).unref();
+      return true;
+    }
+
+    if (process.platform === 'darwin') {
+      const script = 'tell application "Terminal" to do script "openclaw gateway start || openclaw gateway"';
+      spawn('osascript', ['-e', script], { stdio: 'ignore', detached: true }).unref();
+      return true;
+    }
+
+    spawn('sh', ['-lc', 'openclaw gateway start || openclaw gateway'], {
+      stdio: 'ignore',
+      detached: true
+    }).unref();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function showGatewayStartupDialog(reason) {
+  const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  const dataChannel = `startup-error:get-data:${requestId}`;
+  const actionChannel = `startup-error:action:${requestId}`;
+  const preloadPath = path.join(__dirname, 'startup-error-preload.cjs');
+  const htmlPath = path.join(__dirname, 'startup-error', 'index.html');
+
+  return new Promise((resolve) => {
+    let settled = false;
+    let win;
+
+    const handleAction = (_event, action) => {
+      if (win && !win.isDestroyed()) {
+        win.close();
+      }
+      finish(action);
+    };
+
+    const finish = (action) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      ipcMain.removeListener(actionChannel, handleAction);
+      ipcMain.removeHandler(dataChannel);
+      resolve(action || 'exit');
+    };
+
+    ipcMain.handle(dataChannel, () => ({
+      title: 'Desktop startup failed',
+      headline: 'OpenClaw Gateway not reachable',
+      reason,
+      host: DEFAULT_GATEWAY_HOST,
+      port: DEFAULT_GATEWAY_PORT
+    }));
+
+    ipcMain.once(actionChannel, handleAction);
+
+    win = new BrowserWindow({
+      width: 560,
+      height: 460,
+      resizable: false,
+      minimizable: false,
+      maximizable: false,
+      fullscreenable: false,
+      autoHideMenuBar: true,
+      backgroundColor: '#eef3fb',
+      title: 'Desktop startup failed',
+      parent: mainWindow || undefined,
+      modal: Boolean(mainWindow),
+      webPreferences: {
+        preload: preloadPath,
+        contextIsolation: true,
+        nodeIntegration: false,
+        additionalArguments: [`--startup-error-request-id=${requestId}`]
+      }
+    });
+
+    win.on('closed', () => {
+      finish('exit');
+    });
+
+    win
+      .loadFile(htmlPath)
+      .catch(() => {
+        finish('exit');
+        dialog.showErrorBox('Desktop startup failed', reason);
+      });
+  });
+}
+
+async function handleStartupFailure(error) {
+  let reason = getStartupErrorMessage(error);
+  const lowerReason = reason.toLowerCase();
+  const isGatewayUnavailable =
+    lowerReason.includes('gateway') &&
+    (lowerReason.includes('not reachable') || lowerReason.includes('not reachable at'));
+
+  if (!isGatewayUnavailable) {
+    dialog.showErrorBox('Desktop startup failed', reason);
+    return false;
+  }
+
+  while (true) {
+    const action = await showGatewayStartupDialog(reason);
+
+    if (action === 'start') {
+      const launched = launchOpenClawGatewayHelper();
+      reason = launched
+        ? `OpenClaw launch command sent. If startup is still in progress, wait a few seconds and retry.\n\n${reason}`
+        : `Failed to launch OpenClaw automatically. Please run \`openclaw gateway start\` manually.\n\n${reason}`;
+      continue;
+    }
+
+    if (action === 'retry') {
+      await sleep(500);
+      const gatewayOk = await checkPortOpen(DEFAULT_GATEWAY_HOST, DEFAULT_GATEWAY_PORT);
+      if (!gatewayOk) {
+        reason = `OpenClaw gateway is not reachable at ${DEFAULT_GATEWAY_HOST}:${DEFAULT_GATEWAY_PORT}.`;
+        continue;
+      }
+
+      try {
+        await bootstrap();
+        return true;
+      } catch (retryError) {
+        reason = getStartupErrorMessage(retryError);
+        continue;
+      }
+    }
+
+    if (action === 'help') {
+      shell.openExternal(GATEWAY_HELP_URL).catch(() => { });
+      continue;
+    }
+
+    return false;
+  }
 }
 
 async function findAvailablePort(startPort, host = '127.0.0.1', maxAttempts = 50) {
@@ -314,13 +564,12 @@ function ensureEnv(upstreamDir) {
 }
 
 function ensureUpstreamDir() {
-  const rootDir = path.resolve(__dirname, '..');
-  const upstreamDir = path.join(rootDir, 'upstream');
+  const upstreamDir = syncBundledUpstreamToRuntime();
   const packageJsonPath = path.join(upstreamDir, 'package.json');
 
   if (!pathExists(upstreamDir) || !pathExists(packageJsonPath)) {
     throw new Error(
-      'Missing upstream source. Run `git submodule update --init --recursive` and `npm run sync:upstream` first.'
+      'Missing upstream source in packaged app. Please reinstall the desktop app.'
     );
   }
 
@@ -420,7 +669,13 @@ function stopUiProcessIfOwned() {
 function spawnUiProcess(upstreamDir, uiPort) {
   uiProcess = spawn(getNpmCommand(), ['run', 'dev'], {
     cwd: upstreamDir,
-    env: { ...process.env, ...NPM_EXEC_ENV, UI_MODE: 'true', UI_PORT: String(uiPort) },
+    env: {
+      ...process.env,
+      ...NPM_EXEC_ENV,
+      NODE_ENV: 'development',
+      UI_MODE: 'true',
+      UI_PORT: String(uiPort)
+    },
     stdio: 'pipe',
     shell: process.platform === 'win32',
     detached: false
@@ -515,22 +770,32 @@ async function bootstrap() {
   const fingerprints = buildUpstreamFingerprints(upstreamDir);
   const shouldInstall =
     !fingerprints.hasNodeModules ||
+    !fingerprints.hasTsxBinary ||
     bootstrapState?.installFingerprint !== fingerprints.installFingerprint;
   const shouldBuild =
-    !fingerprints.hasDist ||
-    shouldInstall ||
-    bootstrapState?.buildFingerprint !== fingerprints.buildFingerprint;
+    !app.isPackaged &&
+    (!fingerprints.hasDist ||
+      shouldInstall ||
+      bootstrapState?.buildFingerprint !== fingerprints.buildFingerprint);
 
   if (shouldInstall) {
     console.log('[desktop] Installing upstream dependencies...');
-    await runCommand(['install'], { cwd: upstreamDir });
+    await runCommand(['install', '--include=dev'], {
+      cwd: upstreamDir,
+      env: { NODE_ENV: 'development' }
+    });
   } else {
     console.log('[desktop] Upstream dependencies unchanged, skipping install.');
   }
 
   if (shouldBuild) {
     console.log('[desktop] Building upstream...');
-    await runCommand(['run', 'build'], { cwd: upstreamDir });
+    await runCommand(['run', 'build'], {
+      cwd: upstreamDir,
+      env: { NODE_ENV: 'development' }
+    });
+  } else if (app.isPackaged) {
+    console.log('[desktop] Packaged runtime detected, skipping upstream build.');
   } else {
     console.log('[desktop] Upstream source unchanged, skipping build.');
   }
@@ -592,7 +857,10 @@ app.whenReady().then(async () => {
     await bootstrap();
   } catch (error) {
     console.error('[desktop] Startup failed:', error);
-    dialog.showErrorBox('Desktop startup failed', error.message);
+    const recovered = await handleStartupFailure(error);
+    if (recovered) {
+      return;
+    }
     isQuitting = true;
     app.quit();
   }
