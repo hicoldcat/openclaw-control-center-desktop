@@ -22,6 +22,7 @@ jobs:
       release_tag: ${{ steps.release_meta.outputs.tag }}
       release_name: ${{ steps.release_meta.outputs.name }}
       release_body: ${{ steps.release_meta.outputs.body }}
+      desktop_version: ${{ steps.release_meta.outputs.desktop_version }}
       commit_sha: ${{ steps.release_meta.outputs.commit_sha }}
     steps:
       - name: Checkout
@@ -73,8 +74,8 @@ jobs:
           timestamp="$(date -u +'%Y%m%d-%H%M%S')"
           display_time="$(date -u +'%Y-%m-%d %H:%M UTC')"
           upstream_version="$(node -p "require('./upstream/package.json').version")"
-          desktop_version="${upstream_version}-desktop.${timestamp}"
           short_sha="$(git rev-parse --short HEAD)"
+          desktop_version="${upstream_version}-${short_sha}"
           tag="desktop-v${upstream_version}-${timestamp}-${short_sha}"
           name="v${upstream_version}-${short_sha}"
 
@@ -94,6 +95,7 @@ jobs:
 
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
           echo "name=${name}" >> "$GITHUB_OUTPUT"
+          echo "desktop_version=${desktop_version}" >> "$GITHUB_OUTPUT"
           echo "commit_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           {
             echo "body<<EOF"
@@ -163,6 +165,10 @@ jobs:
       - name: Install desktop dependencies
         shell: bash
         run: npm install
+
+      - name: Set desktop app version
+        shell: bash
+        run: npm version "${{ needs.prepare.outputs.desktop_version }}" --no-git-tag-version --allow-same-version
 
       - name: Install upstream dependencies
         shell: bash
