@@ -125,7 +125,7 @@ jobs:
 
       - name: Install upstream dependencies
         shell: bash
-        run: npm ci
+        run: npm install
         working-directory: upstream
 
       - name: Prepare upstream env
