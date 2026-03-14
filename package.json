@@ -28,18 +28,6 @@
       "target": [
         "nsis"
       ]
-    },
-    "mac": {
-      "icon": "assets/macos/icon.icns",
-      "target": [
-        "dmg"
-      ]
-    },
-    "linux": {
-      "icon": "assets/linux/icons",
-      "target": [
-        "AppImage"
-      ]
     }
   },
   "devDependencies": {
