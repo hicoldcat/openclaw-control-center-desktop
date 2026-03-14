@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OpenClaw Desktop</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div id="window-controls" class="window-controls">
+        <button id="minimize-btn" class="icon-btn" aria-label="Minimize" title="Minimize">
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M3 8h10v1H3z" />
+          </svg>
+        </button>
+        <button id="maximize-btn" class="icon-btn" aria-label="Maximize" title="Maximize">
+          <svg class="icon-max" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M3 3h10v10H3zM4 4v8h8V4z" />
+          </svg>
+          <svg class="icon-restore hidden" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M5 3h8v8h-1V4H5zM3 5h8v8H3zM4 6v6h6V6z" />
+          </svg>
+        </button>
+        <button id="close-btn" class="icon-btn danger" aria-label="Close" title="Close">
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M4.2 3.5 8 7.3l3.8-3.8.7.7L8.7 8l3.8 3.8-.7.7L8 8.7l-3.8 3.8-.7-.7L7.3 8 3.5 4.2z" />
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <main id="main-content" class="main-content">
+      <iframe id="ui-frame" class="ui-frame" title="OpenClaw UI"></iframe>
+    </main>
+
+    <script src="./renderer.js"></script>
+  </body>
+</html>

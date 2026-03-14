@@ -1,0 +1,5 @@
+[submodule "upstream"]
+	path = upstream
+	url = https://github.com/TianyiDataScience/openclaw-control-center.git
+	branch = main
+	ignore = dirty

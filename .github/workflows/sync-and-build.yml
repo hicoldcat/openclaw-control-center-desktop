@@ -1,0 +1,175 @@
+name: Sync Upstream And Build Desktop
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+    inputs:
+      force_package:
+        description: 'Force package and release even when upstream has no changes'
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      should_package: ${{ steps.decide.outputs.should_package }}
+      release_tag: ${{ steps.release_meta.outputs.tag }}
+      release_name: ${{ steps.release_meta.outputs.name }}
+      commit_sha: ${{ steps.release_meta.outputs.commit_sha }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Sync upstream source
+        run: node scripts/sync-upstream.cjs
+
+      - name: Detect upstream changes
+        id: detect
+        run: |
+          if [[ -n "$(git status --porcelain -- .gitmodules upstream)" ]]; then
+            echo "upstream_changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "upstream_changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit upstream changes
+        if: steps.detect.outputs.upstream_changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .gitmodules upstream
+          git commit -m "chore: sync upstream openclaw-control-center"
+          git push
+
+      - name: Decide package run
+        id: decide
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.force_package }}" == "true" ]]; then
+            echo "should_package=true" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ steps.detect.outputs.upstream_changed }}" == "true" ]]; then
+            echo "should_package=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_package=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Generate release metadata
+        if: steps.decide.outputs.should_package == 'true'
+        id: release_meta
+        run: |
+          timestamp="$(date -u +'%Y%m%d-%H%M%S')"
+          short_sha="$(git rev-parse --short HEAD)"
+          tag="desktop-${timestamp}-${short_sha}"
+          name="OpenClaw Desktop ${tag}"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "name=${name}" >> "$GITHUB_OUTPUT"
+          echo "commit_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Skip message
+        if: steps.decide.outputs.should_package != 'true'
+        run: echo "No upstream changes and no manual force package, skip build and release."
+
+  create-release:
+    needs: prepare
+    if: needs.prepare.outputs.should_package == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare.outputs.release_tag }}
+          target_commitish: ${{ needs.prepare.outputs.commit_sha }}
+          name: ${{ needs.prepare.outputs.release_name }}
+          draft: true
+          generate_release_notes: true
+
+  build:
+    needs: [prepare, create-release]
+    if: needs.prepare.outputs.should_package == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows
+          - os: macos-latest
+            platform: macos
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.prepare.outputs.commit_sha }}
+          submodules: recursive
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install desktop dependencies
+        shell: bash
+        run: npm install
+
+      - name: Install upstream dependencies
+        shell: bash
+        run: npm ci
+        working-directory: upstream
+
+      - name: Prepare upstream env
+        shell: bash
+        run: |
+          if [[ ! -f upstream/.env && -f upstream/.env.example ]]; then
+            cp upstream/.env.example upstream/.env
+          fi
+
+      - name: Build upstream
+        shell: bash
+        run: npm run build
+        working-directory: upstream
+
+      - name: Package desktop app
+        shell: bash
+        run: npm run dist
+
+      - name: Upload platform artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-build-${{ matrix.platform }}-${{ needs.prepare.outputs.release_tag }}
+          path: dist/**
+
+  publish-release:
+    needs: [prepare, build]
+    if: needs.prepare.outputs.should_package == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all platform artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: desktop-build-*-${{ needs.prepare.outputs.release_tag }}
+          path: release-assets
+          merge-multiple: true
+
+      - name: Publish final release with all assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare.outputs.release_tag }}
+          target_commitish: ${{ needs.prepare.outputs.commit_sha }}
+          name: ${{ needs.prepare.outputs.release_name }}
+          draft: false
+          files: |
+            release-assets/**

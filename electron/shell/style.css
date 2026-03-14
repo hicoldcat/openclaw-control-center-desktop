@@ -1,0 +1,95 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  font-family: Segoe UI, Helvetica, Arial, sans-serif;
+  color: #101828;
+  background: #f2f4f7;
+}
+
+body {
+  display: grid;
+  grid-template-rows: 52px 1fr;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 10px;
+  border-bottom: 1px solid #d0d5dd;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  -webkit-app-region: drag;
+}
+
+.icon-btn {
+  width: 32px;
+  height: 32px;
+  border: 1px solid #d0d5dd;
+  border-radius: 8px;
+  background: #ffffff;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  font-size: 14px;
+  line-height: 1;
+  color: #344054;
+  -webkit-app-region: no-drag;
+}
+
+.icon-btn:hover {
+  background: #f2f4f7;
+}
+
+.icon-btn svg {
+  width: 18px;
+  height: 18px;
+  fill: #475467;
+}
+
+.window-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  -webkit-app-region: no-drag;
+}
+
+body.platform-darwin .topbar {
+  justify-content: flex-start;
+}
+
+body.platform-win32 .topbar,
+body.platform-linux .topbar {
+  justify-content: flex-end;
+}
+
+.icon-btn.danger:hover {
+  background: #fee4e2;
+  border-color: #fda29b;
+  color: #b42318;
+}
+
+.main-content {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.ui-frame {
+  border: 0;
+  width: 100%;
+  height: 100%;
+  background: #ffffff;
+}
+
+.hidden {
+  display: none;
+}

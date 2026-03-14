@@ -1,0 +1,8 @@
+node_modules/
+dist/
+release/
+.cache/
+*.log
+upstream/node_modules/
+upstream/.env
+upstream/runtime/
