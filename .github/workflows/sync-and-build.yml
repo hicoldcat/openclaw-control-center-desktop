@@ -1,6 +1,10 @@
 name: Sync Upstream And Build Desktop
 
 on:
+  push:
+    branches:
+      - master
+      - main
   schedule:
     - cron: '*/30 * * * *'
   workflow_dispatch:
@@ -34,10 +38,12 @@ jobs:
           node-version: '22'
 
       - name: Sync upstream source
+        if: github.event_name != 'push'
         run: node scripts/sync-upstream.cjs
 
       - name: Detect upstream changes
         id: detect
+        if: github.event_name != 'push'
         run: |
           if [[ -n "$(git status --porcelain -- .gitmodules upstream)" ]]; then
             echo "upstream_changed=true" >> "$GITHUB_OUTPUT"
@@ -46,7 +52,7 @@ jobs:
           fi
 
       - name: Commit upstream changes
-        if: steps.detect.outputs.upstream_changed == 'true'
+        if: github.event_name != 'push' && steps.detect.outputs.upstream_changed == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -54,10 +60,20 @@ jobs:
           git commit -m "chore: sync upstream openclaw-control-center"
           git push
 
+      - name: Push trigger health check
+        if: github.event_name == 'push'
+        run: |
+          echo "Push-triggered sanity run"
+          echo "ref=${GITHUB_REF}"
+          echo "sha=${GITHUB_SHA}"
+          echo "actor=${GITHUB_ACTOR}"
+
       - name: Decide package run
         id: decide
         run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.force_package }}" == "true" ]]; then
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            echo "should_package=false" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.force_package }}" == "true" ]]; then
             echo "should_package=true" >> "$GITHUB_OUTPUT"
           elif [[ "${{ steps.detect.outputs.upstream_changed }}" == "true" ]]; then
             echo "should_package=true" >> "$GITHUB_OUTPUT"
